@@ -1,82 +1,91 @@
 # SkyNet Agent
 
-> An autonomous AI agent with persistent memory, self-improvement, tool generation, and multi-model routing. For when one model isn't enough and you want an agent that gets smarter every time you use it.
+> An autonomous AI agent with persistent memory, self-improvement, tool generation, and multi-model routing — wrapped in a **Terminator-inspired HUD**.
 
-## Quick Start
+## One-Click Install
 
 ```bash
-# 1. Set your API key
+curl -fsSL https://raw.githubusercontent.com/darkwader26/SkyNet-Agent/main/install.sh | bash
+```
+
+Or with Git:
+
+```bash
+git clone https://github.com/darkwader26/SkyNet-Agent.git
+cd SkyNet-Agent
+pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your OPENAI_API_KEY or OPENROUTER_API_KEY
-
-# 2. Install
-pip install -r requirements.txt
-
-# 3. Run
 python main.py
-
-# 4. Chat
-> what's the latest news on AI?
-> toolgen fetch stock prices from Yahoo Finance
-> search_files "def main" path=. file_glob="*.py"
-> /learn
 ```
+
+## Terminal UI
+
+```
+╔══════════════════════════════════════╗
+║     ███████╗██╗  ██╗██╗   ██╗███╗   ║
+║     ██╔════╝██║ ██╔╝╚██╗ ██╔╝████╗  ║
+║     ███████╗█████╔╝  ╚████╔╝ ██╔██╗ ║
+║     ╚════██║██╔═██╗   ╚██╔╝  ██║╚██╗║
+║     ███████║██║  ██╗   ██║   ██║ ╚██║
+║     ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝║
+║     CONNECTION ESTABLISHED — v0.3.0   ║
+╚══════════════════════════════════════╝
+
+[▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+▸ Neural net — 19 tools registered
+▸ Memory: SQLite + FTS5 online
+▸ Router: LLM classifier online
+...
+```
+
+SkyNet speaks in **bright red on black**, T-800 style. User input in cyan. Tool calls display with targeting reticles. Boot sequence with scanning lines. Full `/hud` dashboard.
+
+Run with `--no-tui` to return to plain mode.
 
 ## What Makes It Different
 
 | Feature | What It Does |
 |---------|-------------|
-| **🧠 Self-Improvement** | Learns from failures using an LLM, extracts lessons, and appends them to its system prompt automatically |
-| **🛠️ Tool Generation** | Type `toolgen <prompt>` and it writes, validates, and registers a new Python tool at runtime |
-| **🌐 Web Search** | DuckDuckGo-based — no API key needed. Searches the web and fetches page content |
-| **💻 Code Sandbox** | Executes Python and bash in isolated subprocesses to verify its own code |
-| **📁 File System** | Read, write, search, and list files with grep integration |
-| **🧠 Persistent Memory** | SQLite + FTS5 for session search, fact storage, and experience replay |
-| **🎯 Smart Router** | LLM-based task classification routes reasoning to powerful models, simple lookups to fast ones. Auto-failover if a provider goes down |
-| **⏰ Scheduling** | Create recurring jobs (`cron_create 'daily report' 'every day' 'summarize my projects'`) |
-| **🔧 16+ Tools Built-in** | Search, fetch, execute, read, write, remember, schedule — all at launch |
+| **🧠 Self-Improvement** | Learns from failures — LLM extracts lessons, appends to system prompt automatically |
+| **🛠️ Tool Generation** | `toolgen <prompt>` → writes, validates, registers a new Python tool at runtime |
+| **🌐 Web Search** | DuckDuckGo-based — no API key needed |
+| **💻 Code Sandbox** | Python and bash execution in isolated subprocesses |
+| **📁 File System** | Read, write, search, and list files |
+| **🧠 Persistent Memory** | SQLite + FTS5 — search past sessions, store facts |
+| **🎯 Smart Router** | LLM classifier (falls back to regex) → routes to best model → auto-failover |
+| **⏰ Scheduling** | `cron_create 'daily report' 'every day' 'summarize projects'` |
+| **🖥️ Terminator TUI** | Red-on-black HUD, scanner lines, glitch effects, targeting reticles |
+| **🔧 19 Tools Built-in** | 6 categories: web, code, filesystem, memory, scheduling, utility |
 
 ## Architecture
 
 ```
-main.py                      ← Entry point with CLI args
+main.py
 ├── skynet/
-│   ├── agent.py             ← Core conversation loop + slash commands
-│   ├── config.py            ← Provider/model routing config
-│   ├── registry.py          ← Dynamic tool registry with validation
-│   ├── memory.py            ← SQLite + FTS5 memory system
-│   ├── router.py            ← LLM-based task classifier + failover
-│   ├── improv.py            ← Self-improvement engine
-│   └── daemon.py            ← Background autonomous mode
-├── tools/                   ← Auto-discovered tool modules
-│   ├── web_search.py        ← DuckDuckGo search + fetch
-│   ├── executor.py          ← Python/bash sandbox
-│   ├── filesystem.py        ← read/write/search files
-│   ├── memories.py          ← Memory read/write/delete
-│   ├── cron.py              ← Scheduling tools
-│   └── router_info.py       ← Router inspection
-└── system_prompt.md         ← Agent identity & rules (self-modifying!)
+│   ├── agent.py     ← Core loop + TUI + slash commands
+│   ├── tui.py       ← Terminator-inspired HUD (rich)
+│   ├── config.py    ← Multi-provider routing
+│   ├── registry.py  ← Dynamic tool registry with validation
+│   ├── memory.py    ← SQLite + FTS5
+│   ├── router.py    ← LLM classifier + regex fallback + failover
+│   ├── improv.py    ← Self-improvement engine
+│   └── daemon.py    ← Background autonomous loop
+├── tools/           ← Auto-discovered modules (6 files, 19 tools)
+├── main.py          ← Entry point
+├── install.sh       ← Curl-pipe-bash installer
+├── Dockerfile       ← Docker deploy
+└── system_prompt.md ← Self-modifying agent identity
 ```
 
 ## Self-Improvement
 
-SkyNet learns from its mistakes. Here's how:
-
-1. A tool call fails → the experience is logged to SQLite
-2. A cheap LLM analyzes the failure and extracts a concrete lesson
-3. The lesson is appended to `system_prompt.md` under `## 🧠 Learned Rules`
-4. On the next turn, the agent reads the new rule and avoids the same mistake
-5. Every 10+ rules, they get consolidated into a tighter set
-
-```text
-# Before: agent fails because it didn't check a path exists
-> read_file("/nonexistent/file.txt")
-Error: File not found
-
-# After: system prompt automatically gains:
-## 🧠 Learned Rules
-- Before reading a file, always verify the path exists first
 ```
+Tool fails → SQLite experience DB → LLM extracts lesson
+→ lesson appended to system_prompt.md → future turns avoid same mistake
+```
+
+Every 10+ rules get consolidated into a tighter set.
 
 ## Slash Commands
 
@@ -89,9 +98,8 @@ Error: File not found
 | `/resume <id>` | Resume a past session |
 | `/sessions` | List recent sessions |
 | `/search <q>` | Search past conversations |
-| `/route <q>` | Classify a task (which model?) |
-| `/consolidate` | Consolidate learned rules |
-| `/new` | Start a fresh session |
+| `/route <q>` | Classify a task |
+| `/hud` | System dashboard |
 | `/help` | Show all commands |
 | `toolgen <desc>` | Generate a new tool at runtime |
 
@@ -104,6 +112,7 @@ python main.py --help
   -r, --resume SESSION  Resume a session
   --no-improve          Disable self-improvement
   --yolo                Skip approval gates
+  --no-tui              Disable Terminal UI (plain mode)
   -q, --query TEXT      Single query mode
   --daemon              Enable background daemon
   --db PATH             Memory database path
@@ -114,8 +123,8 @@ python main.py --help
 ## Requirements
 
 - Python 3.10+
-- An API key (OpenAI, OpenRouter, DeepSeek, Anthropic, or local Ollama)
-- `curl` (for web search)
+- An API key (OpenAI, OpenRouter, DeepSeek, Anthropic, or Ollama)
+- `curl` (for web search + installer)
 
 ## License
 

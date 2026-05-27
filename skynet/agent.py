@@ -20,6 +20,7 @@ from .memory import Memory
 from .router import TaskRouter
 from .improv import SelfImprovement
 from .daemon import BackgroundDaemon
+from . import tui
 
 
 class SkyNetAgent:
@@ -28,11 +29,10 @@ class SkyNetAgent:
     def __init__(self, config: AgentConfig = None):
         self.config = config or load_config()
         self.session_id = self.config.session_id or self._make_session_id()
+        self._use_tui = self.config.tui_enabled
 
         # Reload tool modules (deferred to avoid circular imports)
         loaded = registry.reload()
-        if loaded:
-            print(f"  🔧 Loaded {loaded} tool module(s)")
 
         # Core systems
         self.memory = Memory(self.config.memory_db_path)
@@ -47,8 +47,6 @@ class SkyNetAgent:
         self.daemon = BackgroundDaemon(
             interval_sec=self.config.daemon_interval_sec,
         )
-
-        # Wire up daemon alert handler
         self.daemon.set_alert_handler(self._on_daemon_alert)
 
         # Session state
@@ -116,7 +114,10 @@ class SkyNetAgent:
     def _on_daemon_alert(self, task_name: str, result: dict) -> None:
         """Called when a daemon task fires an alert."""
         msg = result.get("message", f"Daemon task '{task_name}' triggered")
-        print(f"\n  🔔 [DAEMON] {msg}")
+        if self._use_tui:
+            tui.warning_message(f"[DAEMON] {msg}")
+        else:
+            print(f"\n  🔔 [DAEMON] {msg}")
 
     def start_daemon(self) -> None:
         """Start the background daemon in a thread."""
@@ -214,8 +215,14 @@ class SkyNetAgent:
                 else:
                     self._last_error = None
 
-            status = "✅" if '"success": true' in result else "⚠️"
-            print(f"  {status} {fn_name}(...)")
+            if self._use_tui:
+                status_label = "success" if '"success": true' in result else "error"
+                tui.tool_call_display(fn_name, status_label, self._tool_count)
+                if "error" in result.lower() and len(result) < 500:
+                    tui.tool_result_display(result)
+            else:
+                status = "✅" if '"success": true' in result else "⚠️"
+                print(f"  {status} {fn_name}(...)")
 
             results.append({
                 "role": "tool",
@@ -327,26 +334,30 @@ class SkyNetAgent:
 
     def run(self):
         """Run the main conversation loop."""
-        print(f"\n{'='*55}")
-        print(f"  🤖 SkyNet Agent")
-        print(f"  Session: {self.session_id}")
-        print(f"  Model:   {self.config.default_model}")
-        print(f"  Tools:   {len(registry.list_tools())} registered")
-        print(f"  Memory:  {len(self.memory.get_facts())} facts stored")
-        if self.config.auto_improve:
-            impr = self.improver.status()
-            print(f"  Lessons: {impr['pending_lessons']} pending, "
-                  f"{impr['lessons_applied_this_session']} applied")
-        print(f"{'='*55}")
+        if self._use_tui:
+            tui.boot_sequence({
+                'version': '0.3.0',
+                'tool_count': len(registry.list_tools()),
+                'session_id': self.session_id,
+                'model': self.config.default_model,
+            })
+        else:
+            print(f"\n{'='*55}")
+            print(f"  SkyNet Agent")
+            print(f"  Session: {self.session_id}")
+            print(f"  Model:   {self.config.default_model}")
+            print(f"  Tools:   {len(registry.list_tools())} registered")
+            print(f"{'='*55}")
+
         print(f"  Commands: /quit | /new | /save <name> | /resume <id>")
         print(f"            /tools | /facts | /learn | toolgen <desc>")
         print()
 
         while True:
             try:
-                user_input = input("You: ").strip()
+                user_input = input("> " if self._use_tui else "You: ").strip()
             except (EOFError, KeyboardInterrupt):
-                print("\n  👋 Goodbye!")
+                print("\n  System offline!")
                 self._cleanup()
                 break
 
@@ -392,7 +403,10 @@ class SkyNetAgent:
                     stream=self.config.stream,
                 )
             except Exception as e:
-                print(f"  ❌ LLM error: {e}")
+                if self._use_tui:
+                    tui.error_message(f"LLM error: {e}")
+                else:
+                    print(f"  ❌ LLM error: {e}")
                 # Try without tools as fallback
                 try:
                     result = self._llm_call(
@@ -400,8 +414,15 @@ class SkyNetAgent:
                         tools=None, stream=False,
                     )
                 except Exception as e2:
-                    print(f"  ❌ Fallback also failed: {e2}")
-                    break
+                    if self._use_tui:
+                        tui.error_message(f"Fallback also failed: {e2}")
+                    else:
+                        print(f"  ❌ Fallback also failed: {e2}")
+
+                # User message display at start
+                if self._use_tui:
+                    tui.user_message(user_input)
+                break
 
             if result["type"] == "stream":
                 # Streaming response — already printed
@@ -424,7 +445,10 @@ class SkyNetAgent:
             else:
                 content = msg.content or ""
                 if content:
-                    print(f"\n🤖 {content}\n")
+                    if self._use_tui:
+                        tui.agent_message(content)
+                    else:
+                        print(f"\n🤖 {content}\n")
                     self.history.append({"role": "assistant", "content": content})
                     self.memory.save_message(self.session_id, "assistant", content)
                 break
@@ -434,7 +458,10 @@ class SkyNetAgent:
             applied = self.improver.apply_pending_lessons()
             if applied:
                 self._save_and_refresh_prompt()
-                print(f"  🧠 Learned {applied} new rule(s) from experience")
+                if self._use_tui:
+                    tui.warning_message(f"Applied {applied} learned rule(s) from experience")
+                else:
+                    print(f"  🧠 Learned {applied} new rule(s) from experience")
 
     # ── Slash Commands ──────────────────────────────────────────────────
 
@@ -525,21 +552,42 @@ class SkyNetAgent:
 
         elif verb == "consolidate":
             count = self.improver.consolidate_rules()
-            print(f"  🧹 Consolidated to {count} rules in system prompt")
+            if self._use_tui:
+                tui.warning_message(f"Consolidated to {count} rules")
+            else:
+                print(f"  🧹 Consolidated to {count} rules in system prompt")
+
+        elif verb == "hud":
+            impr = self.improver.status()
+            if self._use_tui:
+                tui.status_dashboard(
+                    tools=len(registry.list_tools()),
+                    facts=len(self.memory.get_facts()),
+                    session=self.session_id,
+                    lessons=impr.get('pending_lessons', 0),
+                )
+            else:
+                print(f"  Tools: {len(registry.list_tools())}, "
+                      f"Facts: {len(self.memory.get_facts())}, "
+                      f"Lessons: {impr.get('pending_lessons', 0)}")
 
         elif verb in ("help", "?"):
-            print("  /quit         Exit")
-            print("  /new          New session")
-            print("  /save <name>  Name this session")
-            print("  /resume <id>  Resume previous session")
-            print("  /sessions     List recent sessions")
-            print("  /search <q>   Search past conversations")
-            print("  /tools        List registered tools")
-            print("  /facts        Show remembered facts")
-            print("  /learn        Apply pending lessons")
-            print("  /route <q>    Classify a task")
-            print("  /consolidate  Consolidate learned rules")
-            print("  toolgen ...   Generate a new tool")
+            if self._use_tui:
+                tui.show_help()
+            else:
+                print("  /quit         Exit")
+                print("  /new          New session")
+                print("  /save <name>  Name this session")
+                print("  /resume <id>  Resume previous session")
+                print("  /sessions     List recent sessions")
+                print("  /search <q>   Search past conversations")
+                print("  /tools        List registered tools")
+                print("  /facts        Show remembered facts")
+                print("  /learn        Apply pending lessons")
+                print("  /route <q>    Classify a task")
+                print("  /consolidate  Consolidate learned rules")
+                print("  /hud          System dashboard")
+                print("  toolgen ...   Generate a new tool")
 
     def _cleanup(self) -> None:
         """Cleanup on exit."""

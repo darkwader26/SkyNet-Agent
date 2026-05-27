@@ -88,6 +88,9 @@ class AgentConfig:
     log_file: Optional[str] = "data/skynet.log"
     log_level: str = "INFO"
 
+    # TUI
+    tui_enabled: bool = True
+
     # Default model
     default_model: str = "openai/gpt-4o"
 

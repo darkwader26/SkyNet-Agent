@@ -26,6 +26,8 @@ def main():
     parser.add_argument("--db", help="Path to memory database")
     parser.add_argument("--prompt", help="Path to system prompt file")
     parser.add_argument("--tools-dir", help="Path to tools directory")
+    parser.add_argument("--no-tui", action="store_true",
+                        help="Disable Terminal UI (plain mode)")
     args = parser.parse_args()
 
     config = load_config()
@@ -44,6 +46,8 @@ def main():
         config.system_prompt_path = args.prompt
     if args.tools_dir:
         config.tools_dir = args.tools_dir
+    if args.no_tui:
+        config.tui_enabled = False
 
     agent = SkyNetAgent(config)
 

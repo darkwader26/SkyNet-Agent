@@ -16,3 +16,6 @@ apscheduler>=3.10.0
 
 # Config
 pyyaml>=6.0
+
+# TUI
+rich>=13.0.0
