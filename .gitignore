@@ -1,27 +1,27 @@
-# Memory database
-memory.db
-
-# Environment
-.env
-*.env
-
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.egg-info/
 dist/
 build/
+
+# Environment
+.env
+.env.local
+venv/
+.venv/
+
+# Runtime data
+data/memory.db
+data/memory.db-wal
+data/memory.db-shm
+data/*.log
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Logs
-logs/
-*.log
 
 # OS
 .DS_Store

@@ -31,6 +31,9 @@ class SkyNetAgent:
         self.session_id = self.config.session_id or self._make_session_id()
         self._use_tui = self.config.tui_enabled
 
+        # Check API key early
+        self._check_api_key()
+
         # Reload tool modules (deferred to avoid circular imports)
         loaded = registry.reload()
 
@@ -80,8 +83,12 @@ class SkyNetAgent:
             if msg["role"] in ("user", "assistant"):
                 self.history.append({"role": msg["role"], "content": msg["content"]})
         self._session_loaded = True
-        print(f"  📝 Resumed session: {sess.get('title', session_id)} "
-              f"({len(msgs)} messages)")
+        title = sess.get('title', session_id)
+        msg = f"Resumed session: {title} ({len(msgs)} messages)"
+        if self._use_tui:
+            tui.warning_message(msg)
+        else:
+            print(f"  📝 {msg}")
         return True
 
     def _load_system_prompt(self) -> str:
@@ -124,7 +131,10 @@ class SkyNetAgent:
         import threading
         t = threading.Thread(target=self._run_daemon, daemon=True)
         t.start()
-        print(f"  ⏱️  Daemon thread started")
+        if self._use_tui:
+            tui.warning_message(f"Daemon started (interval: {self.config.daemon_interval_sec}s)")
+        else:
+            print(f"  ⏱️  Daemon thread started ({self.config.daemon_interval_sec}s interval)")
 
     def _run_daemon(self) -> None:
         """Run daemon in async event loop."""
@@ -177,9 +187,12 @@ class SkyNetAgent:
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta and delta.content:
                 collected.append(delta.content)
-                print(delta.content, end="", flush=True)
-        print()
-        return {"type": "stream", "content": "".join(collected)}
+        content = "".join(collected)
+        if self._use_tui:
+            tui.agent_message(content)
+        else:
+            print(content)
+        return {"type": "stream", "content": content}
 
     # ── Tool Execution ─────────────────────────────────────────────────
 
@@ -330,10 +343,39 @@ class SkyNetAgent:
         print(f"  ✅ Tool '{fn_name}' registered! ({len(registry.list_tools())} tools total)")
         print(f"  📁 Saved: {file_path}")
 
+    # ── API Key Check ───────────────────────────────────────────────────
+
+    def _check_api_key(self) -> None:
+        """Check that at least one API key is configured. Exit early if not."""
+        from .config import PROVIDERS
+        configured = any(k for _, k, _ in PROVIDERS.values())
+        if not configured:
+            msg = (
+                "\n  ❌ No API keys configured!\n\n"
+                "  SkyNet needs at least one LLM provider to operate.\n\n"
+                "  Quick start:\n"
+                "    1. Get an API key from https://platform.openai.com/api-keys\n"
+                "    2. export OPENAI_API_KEY='sk-...'\n"
+                "    3. Or create a .env file with:\n"
+                "       OPENAI_API_KEY=sk-...\n\n"
+                "  See README.md or https://github.com/darkwader26/SkyNet-Agent\n"
+            )
+            print(msg)
+            sys.exit(1)
+
     # ── Main Loop ──────────────────────────────────────────────────────
 
     def run(self):
         """Run the main conversation loop."""
+        import signal
+
+        def _sigterm(signum, frame):
+            self._cleanup()
+            sys.exit(0)
+
+        signal.signal(signal.SIGTERM, _sigterm)
+        # SIGINT is handled via KeyboardInterrupt in the input() loop below
+
         if self._use_tui:
             tui.boot_sequence({
                 'version': '0.3.0',
@@ -357,7 +399,8 @@ class SkyNetAgent:
             try:
                 user_input = input("> " if self._use_tui else "You: ").strip()
             except (EOFError, KeyboardInterrupt):
-                print("\n  System offline!")
+                print()
+                # Docker / non-TTY: EOFError means stdin is closed
                 self._cleanup()
                 break
 
@@ -384,6 +427,10 @@ class SkyNetAgent:
 
         # Save to memory
         self.memory.save_message(self.session_id, "user", user_input)
+
+        # Display user input in TUI
+        if self._use_tui:
+            tui.user_message(user_input)
 
         self._turn_count = 0
         messages = [{"role": "system", "content": self.system_prompt}] + self.history[-20:]
@@ -419,9 +466,6 @@ class SkyNetAgent:
                     else:
                         print(f"  ❌ Fallback also failed: {e2}")
 
-                # User message display at start
-                if self._use_tui:
-                    tui.user_message(user_input)
                 break
 
             if result["type"] == "stream":
@@ -591,4 +635,7 @@ class SkyNetAgent:
 
     def _cleanup(self) -> None:
         """Cleanup on exit."""
+        self.daemon.stop()
         self.memory.close()
+        if self._use_tui:
+            tui.shutdown_sequence()

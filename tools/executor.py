@@ -29,11 +29,11 @@ def execute_python(code: str, timeout: int = 15) -> str:
     safe_code = textwrap.dedent(f"""\
         import sys, json
         try:
-            exec({{code!r}})
+            exec({code!r})
         except Exception as e:
             import traceback
             print(json.dumps({{"error": str(e), "traceback": traceback.format_exc()}}))
-    """).format(code=code)
+    """)
 
     try:
         result = subprocess.run(

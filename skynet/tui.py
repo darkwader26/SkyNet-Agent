@@ -276,25 +276,45 @@ def status_dashboard(tools: int, facts: int, session: str, lessons: int):
 # ─── Scanner Effect ────────────────────────────────────────────────────
 
 def _scan_lines(width: int, passes: int = 2, delay: float = 0.03):
-    """Scan lines across the terminal (like the Terminator's vision)."""
+    """Scan lines across the terminal (like the Terminator's vision).
+    Uses Rich Live display to avoid raw ANSI conflicts.
+    """
+    from rich.live import Live
+    from rich.text import Text
+    height = _term_height()
     for _ in range(passes):
-        for line in range(_term_height() - 1):
-            sys.stdout.write(f"\033[{line};0H")
-            sys.stdout.write(f"\033[38;5;52m{'█' * width}\033[0m")
-            time.sleep(delay)
-            sys.stdout.write(f"\033[{line};0H{' ' * width}")
-        sys.stdout.flush()
-    sys.stdout.write(f"\033[{_term_height()};0H")
+        with Live(
+            Text(" " * width, style="default"),
+            console=console,
+            refresh_per_second=60,
+            transient=True,
+        ) as live:
+            for line_no in range(min(height - 1, 20)):
+                bars = Text(" " * width)
+                bars.stylize("on #3a0000", 0, width)
+                live.update(bars)
+                time.sleep(delay)
+        time.sleep(delay * 3)
 
 
 def scanner_pulse(duration: float = 0.5):
-    """A quick scanner pulse animation."""
+    """A quick scanner pulse animation using rich Progress."""
     width = min(_term_width(), 80)
     bar_width = width - 10
-    for i in range(bar_width):
-        bar = "▓" * i + "█" + "░" * (bar_width - i - 1)
-        sys.stdout.write(f"\r  [{Theme.PRIMARY}]{bar}[/]")
-        time.sleep(duration / bar_width)
+    from rich.progress import Progress, BarColumn, TextColumn
+
+    with Progress(
+        TextColumn(f"[{Theme.DIM}]SCANNING...[/]"),
+        BarColumn(bar_width=None, style=Theme.DIM, finished_style=Theme.PRIMARY,
+                  pulse_style=Theme.PRIMARY, complete_style=Theme.DIM),
+        TextColumn(f"[{Theme.DIM}]{{task.percentage:>3.0f}}%[/]"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("scan", total=bar_width)
+        for _ in range(bar_width):
+            progress.update(task, advance=1)
+            time.sleep(duration / bar_width)
 
 
 # ─── Slash Command Help ────────────────────────────────────────────────

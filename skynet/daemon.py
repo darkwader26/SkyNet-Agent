@@ -22,6 +22,7 @@ class BackgroundDaemon:
         self.interval_sec = interval_sec
         self._tasks: Dict[str, dict] = {}
         self._running = False
+        self._loop = None
         self._on_alert: Optional[Callable] = None
 
     def set_alert_handler(self, handler: Callable) -> None:
@@ -81,6 +82,8 @@ class BackgroundDaemon:
     async def run_loop(self) -> None:
         """Main daemon loop. Runs until stop() is called."""
         self._running = True
+        loop = asyncio.get_running_loop()
+        self._loop = loop
         print(f"  ⏱️  Daemon active (check every {self.interval_sec}s)")
 
         while self._running:
@@ -125,3 +128,5 @@ class BackgroundDaemon:
     def stop(self) -> None:
         """Graceful shutdown."""
         self._running = False
+        if hasattr(self, '_loop'):
+            self._loop.call_soon_threadsafe(self._loop.stop)
