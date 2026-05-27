@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  skynet:
+    build: .
+    container_name: skynet-agent
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./data:/app/data
+      - ./system_prompt.md:/app/system_prompt.md
+      - ./tools:/app/tools
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
